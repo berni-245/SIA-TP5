@@ -229,7 +229,7 @@ class BasicAutoEncoder:
 
         self.error /= self.dataset.shape[0]
     
-    def get_current_latent_space(self) -> NDArray[np.float64]:
+    def get_current_latent_space(self, input: NDArray[np.float64]) -> NDArray[np.float64]:
         """
         Returns the latent representation (vector in the bottleneck layer)
         based on the most recent forward pass.
@@ -238,9 +238,20 @@ class BasicAutoEncoder:
         if not hasattr(self.neural_net, "values") or len(self.neural_net.values) == 0:
             raise RuntimeError("No forward pass has been performed yet.")
 
-        latent_layer_index = len(self.neural_net.hidden_layers) // 2
+        self.neural_net.forward_pass(input)
+
+        latent_layer_index = len(self.neural_net.values) // 2
         return self.neural_net.values[latent_layer_index]
 
+    def decode_from_latent_space_representation(self, latent_space_representation: NDArray[np.float64]) -> NDArray[np.float64]:
+        current_values = latent_space_representation
+        latent_weight_index = len(self.neural_net.weights) // 2
+        for weight_matrix_idx in range(latent_weight_index, len(self.neural_net.weights)):
+            weight_matrix = self.neural_net.weights[weight_matrix_idx]
+            current_values = np.insert(current_values, 0, 1.0)
+            z = np.dot(weight_matrix, current_values)
+            current_values: NDArray[np.float64] = self.neural_net.activation_func.func(z, self.neural_net.beta_func)
+        return current_values
 
     def try_current_epoch(self, inputs: NDArray[np.float64]) -> NDArray[np.float64]:
         """
