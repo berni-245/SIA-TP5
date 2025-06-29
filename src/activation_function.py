@@ -13,7 +13,6 @@ class ActivationFunction(Enum):
     LOGISTICS = (
         lambda x, beta: 1 / (1 + np.exp(np.clip(-50, -2 * beta * x, 50))),
         lambda x, beta: 
-            a = 123
             2 * beta * (
                 1 / (1 + np.exp(np.clip(-50, -2 * beta * x, 50)))
             ) * (
