@@ -5,8 +5,7 @@ name = "pypi"
 
 [packages]
 numpy = "*"
-matplotlib = "*"
-pandas = "*"
+seaborn = "*"
 
 [dev-packages]
 
