@@ -229,7 +229,7 @@ class BasicAutoEncoder:
             self.neural_net.update_weights(row, row, self.learn_rate)
             self.error += self.neural_net.data_error
 
-        self.error /= 2
+        self.error /= self.dataset.shape[0]
     
     def get_current_latent_space(self) -> NDArray[np.float64]:
         """
