@@ -45,16 +45,19 @@ def main():
 
     autoencoder = BasicAutoEncoder(
         dataset=dataset,
-        hidden_encoder_layers_to_latent_space=[100, 15, 10, 5, 2], 
+        hidden_encoder_layers_to_latent_space=[100, 80, 50, 10, 2], 
         activation_func=ActivationFunction.LOGISTICS,
-        learn_rate=0.01,
+        learn_rate=0.001,
         min_error=0.01,
-        max_epochs=1000
+        max_epochs=10000
     )
 
-    while autoencoder.has_next():
-        autoencoder.next_epoch()
-        print(f"Epoch {autoencoder.current_epoch}, error: {autoencoder.error:.5f}")
+    try:
+        while autoencoder.has_next():
+            autoencoder.next_epoch()
+            print(f"Epoch {autoencoder.current_epoch}, error: {autoencoder.error:.5f}")
+    except KeyboardInterrupt:
+        pass
 
     # Visualización del primer carácter (índice 0)
 
@@ -73,14 +76,11 @@ def main():
         # Usar colormap monocromático (binario blanco/negro)
         cmap = plt.get_cmap('binary')
 
-        # Clampeamos los valores reconstruidos entre 0 y 1 (por si se pasan)
-        reconstructed = np.clip(reconstructed, 0, 1)
-
         fig, axs = plt.subplots(1, 2, figsize=(6, 3))
-        sns.heatmap(original, cbar=False, linewidths=0.2, linecolor='black', square=True, ax=axs[0], cmap=cmap)
+        sns.heatmap(original, cbar=False, vmin=0, vmax=1, linewidths=0.2, linecolor='k', square=True, ax=axs[0], cmap=cmap)
         axs[0].set_title("Original")
 
-        sns.heatmap(reconstructed, cbar=False, linewidths=0.2, linecolor='black', square=True, ax=axs[1], cmap=cmap)
+        sns.heatmap(reconstructed, cbar=False, vmin=0, vmax=1, linewidths=0.2, linecolor='k', square=True, ax=axs[1], cmap=cmap)
         axs[1].set_title("Reconstruido")
 
         plt.tight_layout()
