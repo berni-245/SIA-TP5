@@ -17,14 +17,14 @@ class PerceptronOptimizer(Enum):
 
 class NeuralNet:
     def __init__(
-    self,
-    input_count: int,
-    hidden_layers: List[int], 
-    activation_func: ActivationFunction, 
-    optimizer: PerceptronOptimizer = PerceptronOptimizer.ADAM,
-    beta_func: float = 1,             
-    random_weight_initialize: bool = True
-):
+        self,
+        input_count: int,
+        hidden_layers: List[int], 
+        activation_func: ActivationFunction, 
+        optimizer: PerceptronOptimizer = PerceptronOptimizer.ADAM,
+        beta_func: float = 1,             
+        random_weight_initialize: bool = True
+    ):
         """
         input_count: the amount of input arguments
         hidden_layers: list of the amount of neurons per layer (including output layer)
@@ -87,8 +87,6 @@ class NeuralNet:
         learning_rate: float = 0.1
     ):
         self.update_weights_func(input_values, expected_output, learning_rate)
-        
-
 
     def _gradient_descent (  
         self,
@@ -119,11 +117,11 @@ class NeuralNet:
                 deltas = np.dot(weights_wo_bias.T, deltas) * self.activation_func.deriv(self.sums[i - 1], self.beta_func)
 
     def _momentum(
-    self,
-    input_values: NDArray[np.float64],
-    expected_output: NDArray[np.float64],
-    learning_rate: float = 0.1,
-):
+        self,
+        input_values: NDArray[np.float64],
+        expected_output: NDArray[np.float64],
+        learning_rate: float = 0.1,
+    ):
         final_output = self.forward_pass(input_values)
 
         self.data_error = 0
