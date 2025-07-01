@@ -1,9 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from src.utils import font_dataset_to_matrix
+from src.denoising_autoencoder import DenoisingAutoencoder
+from src.utils import add_salt_and_pepper_noise, font_dataset_to_matrix
 from src.activation_function import ActivationFunction
-from src.basic_autoencoder import BasicAutoEncoder
 
 font_3 = np.array([
    [0x04, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00],   # 0x60, `
@@ -43,9 +43,9 @@ font_3 = np.array([
 def main():
     dataset = font_dataset_to_matrix(font_3)
 
-    autoencoder = BasicAutoEncoder(
+    autoencoder = DenoisingAutoencoder(
         dataset=dataset,
-        hidden_encoder_layers_to_latent_space=[60, 30, 50, 20, 2], 
+        hidden_encoder_layers_to_latent_space=[150, 120, 100, 60, 30, 2], 
         activation_func=ActivationFunction.LOGISTICS,
         learn_rate=0.001,
         min_error=0.001,
@@ -65,24 +65,38 @@ def main():
     while True:
         try:
             num = int(input("Ingrese un número: "))
-            elem = dataset[num]
+            original = dataset[num]
         except ValueError:
             continue
         except IndexError:
             continue
-        original = elem.reshape(7, 5)
-        reconstructed_flat = autoencoder.try_current_epoch(elem)
-        reconstructed = reconstructed_flat.reshape(7, 5)
+        noisy_og = add_salt_and_pepper_noise(original, 0.2)
+        reconstructed = autoencoder.try_current_epoch(noisy_og)
+        print(original)
+        print(noisy_og)
+        print(reconstructed)
 
         # Usar colormap monocromático (binario blanco/negro)
         cmap = plt.get_cmap('binary')
 
-        fig, axs = plt.subplots(1, 2, figsize=(6, 3))
-        sns.heatmap(original, cbar=False, vmin=0, vmax=1, linewidths=0.2, linecolor='k', square=True, ax=axs[0], cmap=cmap)
+        fig, axs = plt.subplots(1, 3, figsize=(6, 3))
+        sns.heatmap(
+            original.reshape(7, 5), cbar=False, vmin=0, vmax=1,
+            linewidths=0.2, linecolor='k', square=True, ax=axs[0], cmap=cmap
+        )
         axs[0].set_title("Original")
 
-        sns.heatmap(reconstructed, cbar=False, vmin=0, vmax=1, linewidths=0.2, linecolor='k', square=True, ax=axs[1], cmap=cmap)
-        axs[1].set_title("Reconstruido")
+        sns.heatmap(
+            noisy_og.reshape(7, 5), cbar=False, vmin=0, vmax=1,
+            linewidths=0.2, linecolor='k', square=True, ax=axs[1], cmap=cmap
+        )
+        axs[1].set_title("Noisy")
+
+        sns.heatmap(
+            reconstructed.reshape(7, 5), cbar=False, vmin=0, vmax=1,
+            linewidths=0.2, linecolor='k', square=True, ax=axs[2], cmap=cmap
+        )
+        axs[2].set_title("Reconstruido")
 
         plt.tight_layout()
         plt.show()

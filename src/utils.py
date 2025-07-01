@@ -15,3 +15,21 @@ def font_dataset_to_matrix(font_data: np.ndarray) -> np.ndarray:
         binary_char = to_bin_array(encoded_char)
         dataset.append(binary_char.flatten())
     return np.array(dataset)
+
+def add_salt_and_pepper_noise(x: np.ndarray, noise_level: float) -> np.ndarray:
+    """
+    Applies salt and pepper noise to a 1D binary numpy array.
+    Flips random elements (0→1, 1→0) based on given noise_level.
+    """
+    if x.ndim != 1:
+        raise ValueError("Input must be a 1D numpy array")
+
+    noisy = x.copy()
+    num_noisy = int(noise_level * x.size)
+
+    if num_noisy == 0:
+        return noisy
+
+    indices = np.random.choice(x.size, num_noisy, replace=False)
+    noisy[indices] = 1 - noisy[indices]
+    return noisy
