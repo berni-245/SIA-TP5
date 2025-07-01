@@ -1,9 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from src.utils import font_dataset_to_matrix
+
+from src.variational_autoencoder import VariationalAutoencoder
 from src.activation_function import ActivationFunction
-from src.variational_autoencoder import VariationalAutoEncoder  
+from src.perceptron_optimizer import Adam
 
 font_3 = np.array([
    [0x04, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00],   # 0x60, `
@@ -40,52 +41,73 @@ font_3 = np.array([
    [0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f],   # 0x7f, DEL
 ])
 
+def to_bin_array(encoded_caracter):
+    bin_array = np.zeros((7, 5), dtype=int)
+    for row in range(0, 7):
+        current_row = encoded_caracter[row]
+        for col in range(0, 5):
+            bin_array[row][4-col] = current_row & 1
+            current_row >>= 1
+    return bin_array  
+
+def font_dataset_to_matrix(font_data: np.ndarray) -> np.ndarray:
+    dataset = []
+    for encoded_char in font_data:
+        binary_char = to_bin_array(encoded_char)
+        dataset.append(binary_char.flatten())
+    return np.array(dataset)
+
 def main():
-    dataset = font_dataset_to_matrix(font_3)[:5]
+    # dataset_path = "assets/emoji_dataset.pkl"
+    # dataset = load_emoji_dataset(dataset_path)
+    dataset = font_dataset_to_matrix(font_3)
 
-    autoencoder = VariationalAutoEncoder(
-        dataset=dataset,
-        hidden_encoder_layers_to_latent_space=[20, 10, 2],
+    # names = dataset["names"]
+    # characters = dataset["characters"]
+    # images = np.array([dataset["emojis"][name] for name in names])
+    # image_size = images.shape[1]
+    # data = images.reshape(images.shape[0], -1)
+    # data = np.clip(data, 0, 1).astype(np.float32)
+
+    data = dataset
+
+    input_size = 35
+    latent_size = 3
+
+    vae = VariationalAutoencoder(
+        input_dim=input_size,
+        latent_dim=latent_size,
+        hidden_layers=[150, 100, 30],
         activation_func=ActivationFunction.LOGISTICS,
-        learn_rate=0.01,
-        min_error=0.01,
-        max_epochs=10000
+        optimizer=Adam(learning_rate=0.001),
     )
+    loss_history = vae.train(data, epochs=5000, batch_size=1)
+    # plot_loss_history(loss_history, title="VAE Loss During Training")
+
+    _, _, z, _, _ = vae.forward(data)
+    decoder_activations = vae.decoder.forward(z)
+    generated = decoder_activations[-1]
+
+    for (og, rec) in zip(data, generated):
+        original = og.reshape(7, 5)
+        reconstructed = rec.reshape(7, 5)
+        draw_og_vs_reconstructed(original, reconstructed)
 
 
-    try:
-        while autoencoder.has_next():
-            autoencoder.next_epoch()
-            print(f"Epoch {autoencoder.current_epoch}, error: {autoencoder.error:.5f}")
-    except KeyboardInterrupt:
-        pass
+def draw_og_vs_reconstructed(original, reconstructed):
+  # Usar colormap monocromático (binario blanco/negro)
+  cmap = plt.get_cmap('binary')
 
-    # Visualización del primer carácter (índice 0)
+  fig, axs = plt.subplots(1, 2, figsize=(6, 3))
+  sns.heatmap(original, cbar=False, vmin=0, vmax=1, linewidths=0.2, linecolor='k', square=True, ax=axs[0], cmap=cmap)
+  axs[0].set_title("Original")
 
-    while True:
-        try:
-            num = int(input("Ingrese un número: "))
-            elem = dataset[num]
-        except ValueError:
-            continue
-        except IndexError:
-            continue
-        original = elem.reshape(7, 5)
-        reconstructed_flat = autoencoder.try_current_epoch(elem)
-        reconstructed = reconstructed_flat.reshape(7, 5)
+  sns.heatmap(reconstructed, cbar=False, vmin=0, vmax=1, linewidths=0.2, linecolor='k', square=True, ax=axs[1], cmap=cmap)
+  axs[1].set_title("Reconstruido")
 
-        # Usar colormap monocromático (binario blanco/negro)
-        cmap = plt.get_cmap('binary')
+  plt.tight_layout()
+  plt.show()
 
-        fig, axs = plt.subplots(1, 2, figsize=(6, 3))
-        sns.heatmap(original, cbar=False, vmin=0, vmax=1, linewidths=0.2, linecolor='k', square=True, ax=axs[0], cmap=cmap)
-        axs[0].set_title("Original")
-
-        sns.heatmap(reconstructed, cbar=False, vmin=0, vmax=1, linewidths=0.2, linecolor='k', square=True, ax=axs[1], cmap=cmap)
-        axs[1].set_title("Reconstruido")
-
-        plt.tight_layout()
-        plt.show()
 
 if __name__ == "__main__":
     main()

@@ -8,6 +8,7 @@ class ActivationFunction(Enum):
     HYPERBOLIC = (
         lambda x, beta: np.tanh(np.clip(beta * x, -50, 50)),
         lambda x, beta: beta * (1 - np.tanh(np.clip(beta * x, -50, 50)) ** 2),
+        lambda x, beta: beta*(1-x**2),
         (-1, 1),
     )
     LOGISTICS = (
@@ -17,10 +18,12 @@ class ActivationFunction(Enum):
         ) * (
             1 - (1 / (1 + np.exp(np.clip(-2 * beta * x, -50, 50))))
         ),
+        lambda x, beta: 2*beta*x*(1-x),
         (0, 1),
     )
     LINEAR = (
         lambda x, beta: x,
+        lambda x, beta: 1,
         lambda x, beta: 1,
         None,
     )
@@ -30,10 +33,12 @@ class ActivationFunction(Enum):
         self,
         func: Callable[[Union[float, NDArray[np.float64]], float], Union[float, NDArray[np.float64]]],
         deriv: Callable[[Union[float, NDArray[np.float64]], float], Union[float, NDArray[np.float64]]],
+        deriv_from_out: Callable[[Union[float, NDArray[np.float64]], float], Union[float, NDArray[np.float64]]],
         image: Tuple[float, float] | None,
     ):
         self._func = func
         self._deriv = deriv
+        self._deriv_from_out = deriv_from_out
         self.image = image
 
     def func(self, x: Union[float, NDArray[np.float64]], beta: float) -> Any:
@@ -41,6 +46,9 @@ class ActivationFunction(Enum):
 
     def deriv(self, x: Union[float, NDArray[np.float64]], beta: float) -> Any:
         return self._deriv(x, beta)
+    
+    def deriv_from_out(self, x: Union[float, NDArray[np.float64]], beta: float) -> Any:
+        return self._deriv_from_out(x, beta)
     
     @classmethod
     def from_string(cls, name: str):
