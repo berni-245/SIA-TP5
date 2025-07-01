@@ -233,7 +233,10 @@ class VariationalAutoEncoder:
             # Calcular derivada del loss w.r.t. z
             # Nota: derivada del MSE (1/2)||x-x'||^2 respecto a z
             decoder_weights_0 = self.decoder.weights[0][:, 1:]  # sin bias
-            delta_z = np.dot(decoder_weights_0.T, recon_error * self.decoder.activation_func.deriv(self.decoder.sums[0], self.decoder.beta_func))
+            delta_z = np.dot(
+                decoder_weights_0.T,
+                recon_error * self.decoder.activation_func.deriv(self.decoder.sums[0], self.decoder.beta_func)
+            )
 
             # KL divergence grad
             d_kl_d_mu = self.mu_array
