@@ -3,13 +3,12 @@ import copy
 import numpy as np
 
 from src.activation_function import ActivationFunction
-from src.perceptron_optimizer import SGD, Optimizer
+from src.perceptron_optimizer import Optimizer
 
 
 class VariationalAutoencoder:
     def __init__(self, dataset, input_dim, latent_dim, hidden_layers, activation_func, optimizer: Optimizer,
                  epochs=1000, batch_size=None, beta=0.001, min_error=0.1):
-        # Modelos
         self.latent_dim = latent_dim
         self.encoder = Autoencoder(
             layers=[input_dim] + hidden_layers + [latent_dim * 2],
@@ -51,9 +50,9 @@ class VariationalAutoencoder:
         return mu + std * eps
 
     def loss_fn(self, x, x_hat, mu, log_var, beta=1.0):
-        bce = -np.mean(x * np.log(x_hat + 1e-8) + (1 - x) * np.log(1 - x_hat + 1e-8))
+        binary_entropy = -np.mean(x * np.log(x_hat + 1e-8) + (1 - x) * np.log(1 - x_hat + 1e-8))
         kl = -0.5 * np.mean(np.sum(1 + log_var - mu**2 - np.exp(log_var), axis=1))
-        return bce + beta * kl
+        return binary_entropy + beta * kl
 
     def has_next(self):
         if self.epoch >= self.max_epochs:
@@ -158,7 +157,7 @@ class Autoencoder:
         deltas[-1] = output - x
 
         if self.activate_output:
-            derivs = self.func.deriv_from_out(output, 1)  # Vectorizado: deriv_from_out debe aceptar arrays
+            derivs = self.func.deriv_from_out(output, 1)  
             deltas[-1] *= derivs
 
         for i in reversed(range(len(deltas) - 1)):
@@ -167,18 +166,17 @@ class Autoencoder:
             next_delta = deltas[j]
             next_weights = self.weights[j]
 
-            hidden_error = next_delta @ next_weights[:, 1:]  # ignorar bias weights
+            hidden_error = next_delta @ next_weights[:, 1:]  # ignore bias
             derivs = self.func.deriv_from_out(layer_output, 1)
             deltas[i] = hidden_error * derivs
 
-        grad_wrt_input = deltas[0] @ self.weights[0][:, 1:]
+        grad_wrt = deltas[0] @ self.weights[0][:, 1:]
 
-        # Actualizar pesos con cálculo vectorizado
         for i in range(len(self.weights)):
-            layer_input = self.add_bias(activations[i])  # (batch_size, n_features + 1)
+            layer_input = self.add_bias(activations[i])  
             weight_gradients = deltas[i].T @ layer_input  # type: ignore
             weight_gradients /= batch_size
 
-            self.optimizer.update(i, self.weights[i], weight_gradients)
+            self.optimizer.update_weights(i, self.weights[i], weight_gradients)
 
-        return grad_wrt_input
+        return grad_wrt
