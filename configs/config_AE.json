@@ -1,0 +1,7 @@
+{
+    "hidden_layers": [90, 80, 50],
+    "latent_dim": 2,
+    "max_epochs": 10000,
+    "learning_rate": 0.001,
+    "min_error": 0.1
+}

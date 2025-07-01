@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import json
 from src.utils import font_dataset_to_matrix
 from src.activation_function import ActivationFunction
 from src.basic_autoencoder import BasicAutoEncoder
@@ -43,13 +44,19 @@ font_3 = np.array([
 def main():
     dataset = font_dataset_to_matrix(font_3)
 
+    with open('configs/config_AE.json', 'r') as f:
+        config = json.load(f)
+
+    hidden_layers = config['hidden_layers']
+    hidden_layers.append(config['latent_dim'])
+
     autoencoder = BasicAutoEncoder(
         dataset=dataset,
-        hidden_encoder_layers_to_latent_space=[60, 30, 50, 20, 2], 
+        hidden_encoder_layers_to_latent_space=hidden_layers,
         activation_func=ActivationFunction.LOGISTICS,
-        learn_rate=0.001,
-        min_error=0.001,
-        max_epochs=10000
+        learn_rate=config['learning_rate'],
+        min_error=config['min_error'],
+        max_epochs=config['max_epochs']
     )
 
     try:
@@ -64,7 +71,7 @@ def main():
 
     while True:
         try:
-            num = int(input("Ingrese un número: "))
+            num = int(input("Ingrese el índice (0-31) del caracter en el font a mirar: "))
             elem = dataset[num]
         except ValueError:
             continue

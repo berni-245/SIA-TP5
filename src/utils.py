@@ -20,6 +20,7 @@ def add_salt_and_pepper_noise(x: np.ndarray, noise_level: float) -> np.ndarray:
     """
     Applies salt and pepper noise to a 1D binary numpy array.
     Flips random elements (0→1, 1→0) based on given noise_level.
+    The noise level is between 0 and 1
     """
     if x.ndim != 1:
         raise ValueError("Input must be a 1D numpy array")

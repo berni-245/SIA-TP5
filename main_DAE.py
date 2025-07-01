@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import json
 from src.denoising_autoencoder import DenoisingAutoencoder
 from src.utils import add_salt_and_pepper_noise, font_dataset_to_matrix
 from src.activation_function import ActivationFunction
@@ -43,13 +44,20 @@ font_3 = np.array([
 def main():
     dataset = font_dataset_to_matrix(font_3)
 
+    with open('configs/config_DAE.json', 'r') as f:
+        config = json.load(f)
+
+    hidden_layers = config['hidden_layers']
+    hidden_layers.append(config['latent_dim'])
+
     autoencoder = DenoisingAutoencoder(
         dataset=dataset,
-        hidden_encoder_layers_to_latent_space=[150, 120, 100, 60, 30, 2], 
+        hidden_encoder_layers_to_latent_space=hidden_layers, 
         activation_func=ActivationFunction.LOGISTICS,
-        learn_rate=0.001,
-        min_error=0.001,
-        max_epochs=10000
+        learn_rate=config['learning_rate'],
+        min_error=config['min_error'],
+        max_epochs=config['max_epochs'],
+        noise_level=(config['min_train_noise_level'], config['max_train_noise_level'])
     )
 
     try:
@@ -64,17 +72,14 @@ def main():
 
     while True:
         try:
-            num = int(input("Ingrese un número: "))
+            num = int(input("Ingrese el índice (0-31) del caracter en el font a mirar: "))
             original = dataset[num]
         except ValueError:
             continue
         except IndexError:
             continue
-        noisy_og = add_salt_and_pepper_noise(original, 0.2)
+        noisy_og = add_salt_and_pepper_noise(original, config['noise_level_for_test'])
         reconstructed = autoencoder.try_current_epoch(noisy_og)
-        print(original)
-        print(noisy_og)
-        print(reconstructed)
 
         # Usar colormap monocromático (binario blanco/negro)
         cmap = plt.get_cmap('binary')

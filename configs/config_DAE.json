@@ -1,0 +1,10 @@
+{
+    "hidden_layers": [90, 80, 50],
+    "latent_dim": 20,
+    "max_epochs": 10000,
+    "learning_rate": 0.001,
+    "min_error": 0.1,
+    "min_train_noise_level": 0.05,
+    "max_train_noise_level": 0.1,
+    "noise_level_for_test": 0.1
+}

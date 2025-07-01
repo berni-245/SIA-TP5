@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import json
 
 from src.variational_autoencoder import VariationalAutoencoder
 from src.activation_function import ActivationFunction
@@ -47,31 +48,32 @@ def main():
 
     data = dataset
 
+    with open('configs/config_VAE.json', 'r') as f:
+        config = json.load(f)
+
     input_size = 35
-    latent_size = 3
+    latent_dim = config['latent_dim']
 
     vae = VariationalAutoencoder(
         dataset=data,
         input_dim=input_size,
-        latent_dim=latent_size,
-        hidden_layers=[150, 100, 30],
+        latent_dim=latent_dim,
+        hidden_layers=config['hidden_layers'],
         activation_func=ActivationFunction.LOGISTICS,
-        optimizer=Adam(learning_rate=0.001),
-        epochs=10000,
-        batch_size=10
+        optimizer=Adam(learning_rate=config['learning_rate']),
+        epochs=config['max_epochs'],
+        batch_size=config['batch_size'],
+        min_error=config['min_error']
     )
-    loss_history = []
 
     while vae.has_next():
         loss = vae.next_epoch()
-        loss_history.append((vae.epoch, loss))
         if vae.epoch % 100 == 0:
             print(f"Epoch {vae.epoch}/{vae.max_epochs} - Loss: {loss:.6f}")
 
 
-    _, _, z, _, _ = vae.feed_forward(data)
-    decoder_activations = vae.decoder.forward(z)
-    generated = decoder_activations[-1]
+    z_values = vae.feed_forward(data)[2]
+    generated = vae.decode(z_values)
 
     for (og, rec) in zip(data, generated):
         original = og.reshape(7, 5)
