@@ -84,20 +84,18 @@ class NeuralNet:
     
     def update_weights(
         self,
-        input_values: NDArray[np.float64],
+        final_output: NDArray[np.float64],
         expected_output: NDArray[np.float64],
         learning_rate: float = 0.1
     ):
-        self.update_weights_func(input_values, expected_output, learning_rate)
+        self.update_weights_func(final_output, expected_output, learning_rate)
 
     def _gradient_descent (  
         self,
-        input_values: NDArray[np.float64],
+        final_output: NDArray[np.float64],
         expected_output: NDArray[np.float64],
         learning_rate: float = 0.1
     ):
-        final_output = self.forward_pass(input_values)
-
         # Deltas for output layer
         self.data_error = 0
         error = expected_output - final_output
@@ -120,12 +118,10 @@ class NeuralNet:
 
     def _momentum(
         self,
-        input_values: NDArray[np.float64],
+        final_output: NDArray[np.float64],
         expected_output: NDArray[np.float64],
         learning_rate: float = 0.1,
     ):
-        final_output = self.forward_pass(input_values)
-
         self.data_error = 0
         error = expected_output - final_output
         self.data_error = np.sum(error**2)
@@ -146,13 +142,11 @@ class NeuralNet:
 
     def _adam_step(
         self,
-        input_values: NDArray[np.float64],
+        final_output: NDArray[np.float64],
         expected_output: NDArray[np.float64],
         learning_rate: float = 0.001
     ):
         self.t += 1
-        final_output = self.forward_pass(input_values)
-
         # Output layer delta
         self.data_error = 0
         error = expected_output - final_output
@@ -233,7 +227,7 @@ class VariationalAutoEncoder:
             self.error += total_loss
 
             # Backprop: decoder
-            self.decoder.update_weights(self.z_values, row, self.learn_rate)
+            self.decoder.update_weights(output, row, self.learn_rate)
 
             # Backprop: encoder (KL + grad de decoder hacia encoder)
             # Calcular derivada del loss w.r.t. z
@@ -256,7 +250,9 @@ class VariationalAutoEncoder:
             pseudo_target = np.concatenate([self.mu_array - self.learn_rate * grad_mu,
                                             self.log_var_array - self.learn_rate * grad_logvar])
 
-            self.encoder.update_weights(row, pseudo_target, self.learn_rate)
+            self.encoder.update_weights(np.concatenate(
+                [self.mu_array, self.log_var_array]
+            ), pseudo_target, self.learn_rate)
 
         self.error /= self.dataset.shape[0]
 
