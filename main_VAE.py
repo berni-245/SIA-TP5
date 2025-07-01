@@ -5,6 +5,7 @@ import seaborn as sns
 from src.variational_autoencoder import VariationalAutoencoder
 from src.activation_function import ActivationFunction
 from src.perceptron_optimizer import Adam
+from src.utils import to_bin_array, font_dataset_to_matrix
 
 font_3 = np.array([
    [0x04, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00],   # 0x60, `
@@ -41,33 +42,8 @@ font_3 = np.array([
    [0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f],   # 0x7f, DEL
 ])
 
-def to_bin_array(encoded_caracter):
-    bin_array = np.zeros((7, 5), dtype=int)
-    for row in range(0, 7):
-        current_row = encoded_caracter[row]
-        for col in range(0, 5):
-            bin_array[row][4-col] = current_row & 1
-            current_row >>= 1
-    return bin_array  
-
-def font_dataset_to_matrix(font_data: np.ndarray) -> np.ndarray:
-    dataset = []
-    for encoded_char in font_data:
-        binary_char = to_bin_array(encoded_char)
-        dataset.append(binary_char.flatten())
-    return np.array(dataset)
-
 def main():
-    # dataset_path = "assets/emoji_dataset.pkl"
-    # dataset = load_emoji_dataset(dataset_path)
     dataset = font_dataset_to_matrix(font_3)
-
-    # names = dataset["names"]
-    # characters = dataset["characters"]
-    # images = np.array([dataset["emojis"][name] for name in names])
-    # image_size = images.shape[1]
-    # data = images.reshape(images.shape[0], -1)
-    # data = np.clip(data, 0, 1).astype(np.float32)
 
     data = dataset
 
@@ -75,16 +51,25 @@ def main():
     latent_size = 3
 
     vae = VariationalAutoencoder(
+        dataset=data,
         input_dim=input_size,
         latent_dim=latent_size,
         hidden_layers=[150, 100, 30],
         activation_func=ActivationFunction.LOGISTICS,
         optimizer=Adam(learning_rate=0.001),
+        epochs=10000,
+        batch_size=10
     )
-    loss_history = vae.train(data, epochs=5000, batch_size=1)
-    # plot_loss_history(loss_history, title="VAE Loss During Training")
+    loss_history = []
 
-    _, _, z, _, _ = vae.forward(data)
+    while vae.has_next():
+        loss = vae.next_epoch()
+        loss_history.append((vae.epoch, loss))
+        if vae.epoch % 100 == 0:
+            print(f"Epoch {vae.epoch}/{vae.max_epochs} - Loss: {loss:.6f}")
+
+
+    _, _, z, _, _ = vae.feed_forward(data)
     decoder_activations = vae.decoder.forward(z)
     generated = decoder_activations[-1]
 

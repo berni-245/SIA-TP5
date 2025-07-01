@@ -7,7 +7,9 @@ from src.perceptron_optimizer import SGD, Optimizer
 
 
 class VariationalAutoencoder:
-    def __init__(self, input_dim, latent_dim, hidden_layers, activation_func, optimizer: Optimizer):
+    def __init__(self, dataset, input_dim, latent_dim, hidden_layers, activation_func, optimizer: Optimizer,
+                 epochs=1000, batch_size=None, beta=0.001, min_error=0.1):
+        # Modelos
         self.latent_dim = latent_dim
         self.encoder = Autoencoder(
             layers=[input_dim] + hidden_layers + [latent_dim * 2],
@@ -21,12 +23,17 @@ class VariationalAutoencoder:
             optimizer=copy.deepcopy(optimizer),
         )
 
-    def reparametrize(self, mu, log_var):
-        std = np.exp(0.5 * log_var)
-        eps = np.random.normal(size=std.shape)
-        return mu + std * eps
+        self.dataset = np.array([sample.flatten() for sample in dataset])
+        self.n_samples = self.dataset.shape[0]
+        self.batch_size = batch_size or self.n_samples
+        self.max_epochs = epochs
+        self.beta = beta
+        self.min_error = min_error
+        
+        self.epoch = 0
+        self.loss_history = []
 
-    def forward(self, x):
+    def feed_forward(self, x):
         encoder_activations = self.encoder.forward(x)
         encoded = encoder_activations[-1]
 
@@ -38,68 +45,61 @@ class VariationalAutoencoder:
 
         return mu, log_var, z, encoder_activations, decoder_activations
 
-    def binary_cross_entropy(self, x, x_hat):
-        return -np.mean(x * np.log(x_hat + 1e-8) + (1 - x) * np.log(1 - x_hat + 1e-8))
-
-    def kl_divergence(self, mu, log_var):
-        return -0.5 * np.mean(np.sum(1 + log_var - mu**2 - np.exp(log_var), axis=1))
+    def reparametrize(self, mu, log_var):
+        std = np.exp(0.5 * log_var)
+        eps = np.random.normal(size=std.shape)
+        return mu + std * eps
 
     def loss_fn(self, x, x_hat, mu, log_var, beta=1.0):
-        bce = self.binary_cross_entropy(x, x_hat)
-        kl = self.kl_divergence(mu, log_var)
+        bce = -np.mean(x * np.log(x_hat + 1e-8) + (1 - x) * np.log(1 - x_hat + 1e-8))
+        kl = -0.5 * np.mean(np.sum(1 + log_var - mu**2 - np.exp(log_var), axis=1))
         return bce + beta * kl
 
-    def train(self, x, epochs=1000, batch_size=None, beta=0.001):
-        x = np.array([sample.flatten() for sample in x])
-        n_samples = x.shape[0]
-        batch_size = batch_size or n_samples
+    def has_next(self):
+        if self.epoch >= self.max_epochs:
+            return False
+        if self.loss_history and self.loss_history[-1][1] <= self.min_error:
+            return False
+        return True
 
-        loss_history = []
-        samples_processed = 0
+    def next_epoch(self):
+        idx = np.random.permutation(self.n_samples)
+        total_loss = 0
+        current_beta = self.beta * min(1.0, (self.epoch + 1) / (self.max_epochs * 0.5))
 
-        for epoch in range(epochs):
-            idx = np.random.permutation(n_samples)
-            total_loss = 0
+        for i in range(0, self.n_samples, self.batch_size):
+            left = i
+            right = left + self.batch_size
+            batch_idx = idx[left:right]
+            batch_x = self.dataset[batch_idx]
 
-            # KL Annealing
-            current_beta = beta * min(1.0, (epoch + 1) / (epochs * 0.5))
+            mu, log_var, z, encoder_activations, decoder_activations = self.feed_forward(batch_x)
+            encoded = encoder_activations[-1]
+            reconstructed = decoder_activations[-1]
 
-            for i in range(0, n_samples, batch_size):
-                left = i
-                right = left + batch_size
-                batch_idx = idx[left:right]
-                batch_x = x[batch_idx]
+            loss = self.loss_fn(batch_x, reconstructed, mu, log_var, beta=current_beta)
+            total_loss += loss * len(batch_x)
 
-                mu, log_var, z, encoder_activations, decoder_activations = self.forward(batch_x)
-                encoded = encoder_activations[-1]
-                reconstructed = decoder_activations[-1]
+            grad_z = self.decoder.back_propagate(batch_x, decoder_activations)
 
-                loss = self.loss_fn(batch_x, reconstructed, mu, log_var, beta=current_beta)
-                total_loss += loss
+            grad_mu_bce = grad_z
+            grad_log_var_bce = grad_z * 0.5 * (z - mu)
 
-                samples_processed += len(batch_x)
-                loss_history.append((samples_processed, loss))
+            grad_mu_kl = mu
+            grad_log_var_kl = 0.5 * (np.exp(log_var) - 1)
 
-                grad_z = self.decoder.backward(batch_x, decoder_activations)
+            grad_mu = grad_mu_bce + current_beta * grad_mu_kl
+            grad_log_var = grad_log_var_bce + current_beta * grad_log_var_kl
+            encoder_grad = np.concatenate([grad_mu, grad_log_var], axis=1)
 
-                grad_mu_bce = grad_z
-                grad_log_var_bce = grad_z * 0.5 * (z - mu)
+            encoder_target = encoded - encoder_grad
+            self.encoder.back_propagate(encoder_target, encoder_activations)
 
-                grad_mu_kl = mu
-                grad_log_var_kl = 0.5 * (np.exp(log_var) - 1)
+        avg_loss = total_loss / self.n_samples
+        self.epoch += 1
+        self.loss_history.append((self.epoch, avg_loss))
+        return avg_loss
 
-                grad_mu = grad_mu_bce + current_beta * grad_mu_kl
-                grad_log_var = grad_log_var_bce + current_beta * grad_log_var_kl
-                encoder_grad = np.concatenate([grad_mu, grad_log_var], axis=1)
-
-                encoder_target = encoded - encoder_grad
-                self.encoder.backward(encoder_target, encoder_activations)
-
-            if (epoch + 1) % 100 == 0:
-                avg_loss = total_loss / (n_samples / batch_size)
-                print(f"Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.6f}")
-
-        return loss_history
 
     def decode(self, z):
         decoder_activations = self.decoder.forward(z)
@@ -112,10 +112,8 @@ class Autoencoder:
         self.func = activation_func
         self.optimizer = optimizer
         self.weights = []
-        self.biases = []
         self.activate_output = activate_output
 
-        # Inicialización Xavier/Glorot
         for i in range(len(layers) - 1):
             neurons = layers[i + 1]
             inputs = layers[i] + 1  # +1 for bias
@@ -124,55 +122,63 @@ class Autoencoder:
 
         self.optimizer.initialize(self.weights)
 
+    def add_bias(self, x):
+        x = np.array(x)
+        if x.ndim == 1:
+            x = x[np.newaxis, :]
+        bias = np.ones((x.shape[0], 1))
+        return np.concatenate((bias, x), axis=1)
+
     def forward(self, x):
         input = np.array(x)
+        if input.ndim == 1:
+            input = input[np.newaxis, :]
         activations = [input]
 
         for i, weight_matrix in enumerate(self.weights):
-            bias = np.ones((input.shape[0], 1))
-            input_with_bias = np.concatenate((bias, input), axis=1)
-            h = np.dot(input_with_bias, weight_matrix.T)
+            input_with_bias = self.add_bias(input)
+            h = input_with_bias @ weight_matrix.T  
             if i == len(self.weights) - 1 and not self.activate_output:
                 output = h
             else:
-                output = np.array([self.func.func(h_i, 1) for h_i in h])
+                output = self.func.func(h, 1)
             activations.append(output)
             input = output
 
         return activations
 
-    def backward(self, x, activations):
+    def back_propagate(self, x, activations):
+        x = np.array(x)
+        if x.ndim == 1:
+            x = x[np.newaxis, :]
+
+        batch_size = x.shape[0]
         deltas = [None] * len(self.weights)
         output = activations[-1]
-        deltas[-1] = output - np.array(x)
+        deltas[-1] = output - x
 
-        # Delta de la capa de salida
         if self.activate_output:
-            deltas[-1] *= np.array([self.func.deriv_from_out(o, 1) for o in output])
+            derivs = self.func.deriv_from_out(output, 1)  # Vectorizado: deriv_from_out debe aceptar arrays
+            deltas[-1] *= derivs
 
-        # Delta de las capas ocultas
         for i in reversed(range(len(deltas) - 1)):
             j = i + 1
             layer_output = activations[j]
             next_delta = deltas[j]
             next_weights = self.weights[j]
 
-            # Calcular delta evitando bias
-            hidden_error = np.dot(next_delta, next_weights[:, 1:]) # type: ignore
-            deltas[i] = hidden_error * np.array([self.func.deriv_from_out(o, 1) for o in layer_output])
+            hidden_error = next_delta @ next_weights[:, 1:]  # ignorar bias weights
+            derivs = self.func.deriv_from_out(layer_output, 1)
+            deltas[i] = hidden_error * derivs
 
-        grad_wrt_input = np.dot(deltas[0], self.weights[0][:, 1:]) # type: ignore
+        grad_wrt_input = deltas[0] @ self.weights[0][:, 1:]
 
-        # Actualizar pesos
+        # Actualizar pesos con cálculo vectorizado
         for i in range(len(self.weights)):
-            batch_size = x.shape[0]
-            weight_gradients = np.zeros_like(self.weights[i])
-
-            for b in range(batch_size):
-                layer_input = np.concatenate(([1], activations[i][b]))
-                weight_gradients += np.outer(deltas[i][b], layer_input) # type: ignore
-
+            layer_input = self.add_bias(activations[i])  # (batch_size, n_features + 1)
+            weight_gradients = deltas[i].T @ layer_input  # type: ignore
             weight_gradients /= batch_size
+
             self.optimizer.update(i, self.weights[i], weight_gradients)
 
         return grad_wrt_input
