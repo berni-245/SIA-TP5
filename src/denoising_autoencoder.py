@@ -15,7 +15,7 @@ class DenoisingAutoencoder(BasicAutoEncoder):
         learn_rate: float = 0.1,
         min_error: float = 0.1,
         max_epochs: int = 10000,
-        noise_leve: Tuple[float, float] = (0.1, 0.3)
+        noise_level: Tuple[float, float] = (0.1, 0.3)
     ):
         """
         noise_level: min and max noise levels (percentage). During training a random noise_level in this
@@ -29,9 +29,9 @@ class DenoisingAutoencoder(BasicAutoEncoder):
             min_error,
             max_epochs
         )
-        if not 0 <= noise_leve[0] <= 1 or not 0 <= noise_leve[1] <= 1:
+        if not 0 <= noise_level[0] <= 1 or not 0 <= noise_level[1] <= 1:
             raise ValueError("Noise levels must be between 0 and 1")
-        self.noise_level = noise_leve
+        self.noise_level = noise_level
 
     def next_epoch(self):
         if not self.has_next():
