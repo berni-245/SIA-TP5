@@ -16,7 +16,7 @@ class PerceptronOptimizer(Enum):
     @classmethod
     def from_string(cls, name: str):
         return cls[name.upper()]
-    
+
 class NeuralNet:
     def __init__(
         self,
@@ -24,32 +24,24 @@ class NeuralNet:
         hidden_layers: List[int], 
         activation_func: ActivationFunction, 
         optimizer: PerceptronOptimizer = PerceptronOptimizer.ADAM,
-        beta_func: float = 1,             
-        random_weight_initialize: bool = True
+        beta_func: float = 1,
+        activate_output: bool = True
     ):
-        """
-        input_count: the amount of input arguments
-        hidden_layers: list of the amount of neurons per layer (including output layer)
-        activation_func: activation function used in all layers
-        """
-
         if (len(hidden_layers) == 0):
             raise ArgumentError("One layer must be specified")
 
         self.hidden_layers = hidden_layers.copy()
         self.activation_func = activation_func
-        self.weights: List[NDArray[np.float64]] = [] # NDArray can be vector or matrix, in this case matrix
+        self.weights: List[NDArray[np.float64]] = []
         self.beta_func = beta_func
         self.data_error = 1
+        self.activate_output = activate_output
 
         prev_neuron_count = input_count
         for neurons in hidden_layers:
-            if random_weight_initialize:
-                weight_matrix = np.random.uniform(-1, 1, (neurons, prev_neuron_count + 1)) # +1 for bias
-            else:
-                weight_matrix = np.zeros((neurons, prev_neuron_count + 1))
+            scale = np.sqrt(2.0 / (prev_neuron_count + 1 + neurons))
+            weight_matrix = np.random.normal(0, scale, (neurons, prev_neuron_count + 1))
             self.weights.append(weight_matrix)
-
             prev_neuron_count = neurons
 
         if optimizer == PerceptronOptimizer.GRADIENT_DESCENT:
@@ -57,122 +49,93 @@ class NeuralNet:
         elif optimizer == PerceptronOptimizer.MOMENTUM:
             self.update_weights_func = self._momentum
             self.prev_weight_updates = [np.zeros_like(w) for w in self.weights]
-            self.alpha: float = 0.9  
-        else: # it will default to adam
+            self.alpha: float = 0.9
+        else:
             self.update_weights_func = self._adam_step
-            self.t = 0  
-            self.m = [np.zeros_like(w) for w in self.weights] 
-            self.v = [np.zeros_like(w) for w in self.weights] 
+            self.t = 0
+            self.m = [np.zeros_like(w) for w in self.weights]
+            self.v = [np.zeros_like(w) for w in self.weights]
             self.beta1: float = 0.9
             self.beta2: float = 0.999
             self.epsilon: float = 1e-8
 
     def forward_pass(self, input_values: NDArray[np.float64]) -> NDArray[np.float64]:
-        """
-        input_values: vector of input data (without bias)
-        """
-        self.values: List[NDArray[np.float64]] = [input_values] # the input values and neuron values of each layer, size equals to amount of layers + 1
-        self.sums: List[NDArray[np.float64]] = [] # the weighted sums without the activation, size equals to amount of layers
+        self.values: List[NDArray[np.float64]] = [input_values]
+        self.sums: List[NDArray[np.float64]] = []
         current_values = input_values
-        for weight_matrix in self.weights:
-            current_values = np.insert(current_values, 0, 1.0)  # add bias
+        for i, weight_matrix in enumerate(self.weights):
+            current_values = np.insert(current_values, 0, 1.0)
             z = np.dot(weight_matrix, current_values)
             self.sums.append(z)
-            current_values: NDArray[np.float64] = self.activation_func.func(z, self.beta_func)
+            if i == len(self.weights) - 1 and not self.activate_output:
+                current_values = z
+            else:
+                current_values = self.activation_func.func(z, self.beta_func)
             self.values.append(current_values)
-        return current_values  
-    
-    def update_weights(
-        self,
-        final_output: NDArray[np.float64],
-        expected_output: NDArray[np.float64],
-        learning_rate: float = 0.1
-    ):
-        self.update_weights_func(final_output, expected_output, learning_rate)
+        return current_values
 
-    def _gradient_descent (  
-        self,
-        final_output: NDArray[np.float64],
-        expected_output: NDArray[np.float64],
-        learning_rate: float = 0.1
-    ):
-        # Deltas for output layer
-        self.data_error = 0
-        error = expected_output - final_output
-        self.data_error = np.sum(error**2)
-        deltas = error * self.activation_func.deriv(self.sums[-1], self.beta_func)
+    def update_weights(self, final_output, expected_output, learning_rate=0.1, grad_output=None):
+        if grad_output is not None and self.activate_output:
+            grad_output *= self.activation_func.deriv(self.sums[-1], self.beta_func)
+        return self.update_weights_func(final_output, expected_output, learning_rate, grad_output)
 
-        # Backpropagate deltas and update weights
+    def _gradient_descent(self, final_output, expected_output, learning_rate=0.1, grad_output = None):
+        if grad_output is not None:
+            deltas = grad_output
+        else:
+            error = expected_output - final_output
+            self.data_error = np.sum(error**2)
+            deltas = error * self.activation_func.deriv(self.sums[-1], self.beta_func)
         for i in reversed(range(len(self.weights))):
-            # Prepare values with bias
             values = np.insert(self.values[i], 0, 1.0)
-            # If deltas is 3x1 and values 4x1, np.outer will transverse values to 1x4, to get the resulting matrix of size 3x4
-            self.weights[i] += learning_rate * np.outer(deltas, values) 
-
-            if i > 0: # if we are not on the last layer, we should calculate delta
-
-                # Remove bias weights from current layer, they don't have associated delta
-                weights_wo_bias = self.weights[i][:, 1:]
-
-                deltas = np.dot(weights_wo_bias.T, deltas) * self.activation_func.deriv(self.sums[i - 1], self.beta_func)
-
-    def _momentum(
-        self,
-        final_output: NDArray[np.float64],
-        expected_output: NDArray[np.float64],
-        learning_rate: float = 0.1,
-    ):
-        self.data_error = 0
-        error = expected_output - final_output
-        self.data_error = np.sum(error**2)
-        deltas = error * self.activation_func.deriv(self.sums[-1], self.beta_func)
-
-        for i in reversed(range(len(self.weights))):
-            values = np.insert(self.values[i], 0, 1.0)  # agregar bias
-            gradient = np.outer(deltas, values)
-
-            # Momentum update: Δw(t+1) = -η * grad + α * Δw(t)
-            delta_w = learning_rate * gradient + self.alpha * self.prev_weight_updates[i]
-            self.weights[i] += delta_w
-            self.prev_weight_updates[i] = delta_w  
-
+            self.weights[i] += learning_rate * np.outer(deltas, values)
             if i > 0:
                 weights_wo_bias = self.weights[i][:, 1:]
                 deltas = np.dot(weights_wo_bias.T, deltas) * self.activation_func.deriv(self.sums[i - 1], self.beta_func)
+        return np.dot(self.weights[0][:, 1:].T, deltas)  # ∂L/∂input
 
-    def _adam_step(
-        self,
-        final_output: NDArray[np.float64],
-        expected_output: NDArray[np.float64],
-        learning_rate: float = 0.001
-    ):
+
+    def _momentum(self, final_output, expected_output, learning_rate=0.1, grad_output=None):
+        if grad_output is not None:
+            deltas = grad_output
+        else:
+            error = expected_output - final_output
+            self.data_error = np.sum(error**2)
+            deltas = error * self.activation_func.deriv(self.sums[-1], self.beta_func)
+        for i in reversed(range(len(self.weights))):
+            values = np.insert(self.values[i], 0, 1.0)
+            gradient = np.outer(deltas, values)
+            delta_w = learning_rate * gradient + self.alpha * self.prev_weight_updates[i]
+            self.weights[i] += delta_w
+            self.prev_weight_updates[i] = delta_w
+            if i > 0:
+                weights_wo_bias = self.weights[i][:, 1:]
+                deltas = np.dot(weights_wo_bias.T, deltas) * self.activation_func.deriv(self.sums[i - 1], self.beta_func)
+        return np.dot(self.weights[0][:, 1:].T, deltas)  # ∂L/∂input
+
+    def _adam_step(self, final_output, expected_output, learning_rate=0.001, grad_output=None):
         self.t += 1
-        # Output layer delta
-        self.data_error = 0
-        error = expected_output - final_output
-        self.data_error = np.sum(error ** 2)
-        deltas = error * self.activation_func.deriv(self.sums[-1], self.beta_func)
-
+        if grad_output is not None:
+            deltas = grad_output
+        else:
+            error = expected_output - final_output
+            self.data_error = np.sum(error**2)
+            deltas = error * self.activation_func.deriv(self.sums[-1], self.beta_func)
         grads = []
-
         for i in reversed(range(len(self.weights))):
             values = np.insert(self.values[i], 0, 1.0)
             grad = - np.outer(deltas, values)
             grads.insert(0, grad)
-
             if i > 0:
                 weights_wo_bias = self.weights[i][:, 1:]
                 deltas = np.dot(weights_wo_bias.T, deltas) * self.activation_func.deriv(self.sums[i - 1], self.beta_func)
-
-        # Update weights using Adam
         for i in range(len(self.weights)):
             self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * grads[i]
             self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * (grads[i] ** 2)
-
             m_hat = self.m[i] / (1 - self.beta1 ** self.t)
             v_hat = self.v[i] / (1 - self.beta2 ** self.t)
-
             self.weights[i] -= learning_rate * m_hat / (np.sqrt(v_hat) + self.epsilon)
+        return np.dot(self.weights[0][:, 1:].T, deltas)  # ∂L/∂input
 
 class VariationalAutoEncoder:
     def __init__(
@@ -184,132 +147,119 @@ class VariationalAutoEncoder:
         min_error: float = 0.1,
         max_epochs: int = 10000
     ):
-        """
-        dataset: matrix NxM (N rows of data, M variables)
-        hidden_encoder_layers_to_latent_space: not including input layer, list of neurons per layer in the encoder (last is the latent space)
-        """
         if dataset.shape[0] == 0 or dataset.shape[1] == 0:
             raise ValueError("Dataset must be a non-empty 2D array")
 
         self.dataset = dataset
-        input_count = dataset.shape[1]
-        self.latent_space_dim = hidden_encoder_layers_to_latent_space[-1]
+        input_dim = dataset.shape[1]
+        self.latent_dim = hidden_encoder_layers_to_latent_space[-1]
 
-        self.encoder_layers = hidden_encoder_layers_to_latent_space.copy()
-        self.encoder_layers[-1] = 2 * self.latent_space_dim # the latent space must generate 2 for each z
-        self.encoder = NeuralNet(input_count, self.encoder_layers, activation_func)
-        
-        self.decoder_layers = hidden_encoder_layers_to_latent_space.copy()[:-1][::-1] # remove the latent_space and reverse the array
-        self.decoder_layers.append(input_count) # add to the end the input count
-        self.decoder = NeuralNet(self.latent_space_dim, self.decoder_layers, activation_func)
+        encoder_layers = hidden_encoder_layers_to_latent_space.copy()
+        encoder_layers[-1] = 2 * self.latent_dim  # output = mu + logvar
+
+        self.encoder = NeuralNet(
+            input_count=input_dim,
+            hidden_layers=encoder_layers,
+            activation_func=activation_func,
+            optimizer=PerceptronOptimizer.ADAM,
+            beta_func=1,
+            activate_output=False
+        )
+
+        decoder_layers = hidden_encoder_layers_to_latent_space[:-1][::-1]
+        decoder_layers.append(input_dim)
+
+        self.decoder = NeuralNet(
+            input_count=self.latent_dim,
+            hidden_layers=decoder_layers,
+            activation_func=activation_func,
+            optimizer=PerceptronOptimizer.ADAM,
+            beta_func=1,
+        )
 
         self.learn_rate = learn_rate
         self.max_epochs = max_epochs
         self.min_error = min_error
-        self.error = 100
+        self.error = float("inf")
         self.current_epoch = 0
 
     def has_next(self) -> bool:
-        return bool(self.error > self.min_error and self.current_epoch < self.max_epochs)
+        return self.error > self.min_error and self.current_epoch < self.max_epochs
 
     def next_epoch(self):
         if not self.has_next():
-            raise Exception("Solution was already found or max epochs were reached")
+            raise RuntimeError("Training already converged or max epochs reached")
 
-        self.error = 0
         self.current_epoch += 1
+        total_loss = 0.0
 
         for i in range(self.dataset.shape[0]):
-            row = self.dataset[i]
+            x = self.dataset[i]
 
-            output = self._forward_pass(row)
-            recon_error, kl_divergence, total_loss = self._loss_function(row, output)
-            self.error += total_loss
+            # --------- FORWARD ---------
+            mu_logvar = self.encoder.forward_pass(x)
+            mu = mu_logvar[:self.latent_dim]
+            logvar = np.clip(mu_logvar[self.latent_dim:], -10, 10)
 
-            # Backprop: decoder
-            self.decoder.update_weights(output, row, self.learn_rate)
+            std = np.exp(0.5 * logvar)
+            eps = np.random.normal(size=std.shape)
+            z = mu + std * eps
 
-            # Backprop: encoder (KL + grad de decoder hacia encoder)
-            # Calcular derivada del loss w.r.t. z
-            # Nota: derivada del MSE (1/2)||x-x'||^2 respecto a z
-            decoder_weights_0 = self.decoder.weights[0][:, 1:]  # sin bias
-            delta_z = np.dot(
-                decoder_weights_0.T,
-                recon_error * self.decoder.activation_func.deriv(self.decoder.sums[0], self.decoder.beta_func)
-            )
+            x_hat = self.decoder.forward_pass(z)
 
-            # KL divergence grad
-            d_kl_d_mu = self.mu_array
-            d_kl_d_logvar = 0.5 * (np.exp(self.log_var_array) - 1)
+            # --------- LOSS ------------
+            recon_loss = np.sum((x - x_hat) ** 2)
+            kl_div = -0.5 * np.sum(1 + logvar - mu ** 2 - np.exp(logvar))
+            loss = recon_loss + kl_div
+            total_loss += loss
 
-            # Propagamos total hacia atrás (z depende de mu/logvar)
+            # --------- BACKPROP DECODER ----------
+            grad_z = self.decoder.update_weights(x_hat, x, self.learn_rate)
+
+            # --------- BACKPROP ENCODER ----------
+            # Derivadas por la reparametrización
             dz_dmu = 1
-            dz_dlogvar = 0.5 * np.exp(0.5 * self.log_var_array) * np.random.normal(size=self.log_var_array.shape)
+            dz_dlogvar = 0.5 * np.exp(0.5 * logvar) * eps
 
-            grad_mu = delta_z * dz_dmu + d_kl_d_mu
-            grad_logvar = delta_z * dz_dlogvar + d_kl_d_logvar
+            # Derivadas del KL respecto a mu y logvar
+            dkl_dmu = mu
+            dkl_dlogvar = 0.5 * (np.exp(logvar) - 1)
 
-            # Target ficticio para encoder: volver a mu + logvar modificados por grad
-            pseudo_target = np.concatenate([self.mu_array - self.learn_rate * grad_mu,
-                                            self.log_var_array - self.learn_rate * grad_logvar])
+            # Gradiente total (∂L/∂mu y ∂L/∂logvar)
+            grad_mu = grad_z * dz_dmu + dkl_dmu
+            grad_logvar = grad_z * dz_dlogvar + dkl_dlogvar
+            grad_encoder_output = np.concatenate([grad_mu, grad_logvar])
 
-            self.encoder.update_weights(np.concatenate(
-                [self.mu_array, self.log_var_array]
-            ), pseudo_target, self.learn_rate)
+            # Propagamos el gradiente real hacia el encoder
+            self.encoder.update_weights(mu_logvar, None, self.learn_rate, grad_output=grad_encoder_output)
+            # print(f"Epoch {self.current_epoch} - Avg loss: {total_loss / self.dataset.shape[0]:.6f}")
+            # print(f"Grad z norm: {np.linalg.norm(grad_z):.6f}")
+            # print(f"Grad encoder output norm: {np.linalg.norm(grad_encoder_output):.6f}")
+            # print(f"Mu mean: {np.mean(mu):.6f} Logvar mean: {np.mean(logvar):.6f}")
 
-        self.error /= self.dataset.shape[0]
+
+        self.error = total_loss / self.dataset.shape[0]
 
 
-    def _sampling(self):
-        std = np.exp(0.5 * self.log_var_array)
+    def try_current_epoch(self, input: NDArray[np.float64]) -> NDArray[np.float64]:
+        mu_logvar = self.encoder.forward_pass(input)
+        mu = mu_logvar[:self.latent_dim]
+        logvar = mu_logvar[self.latent_dim:]
+        std = np.exp(0.5 * logvar)
         eps = np.random.normal(size=std.shape)
-        return self.mu_array + std * eps
-    
-    def _forward_pass(self, input_data: NDArray):
-        mu_and_log_var_arrays = self.encoder.forward_pass(input_data) # dim of 2 * self.latent_space_dim
-        self.mu_array = mu_and_log_var_arrays[:self.latent_space_dim] # the first half are the mus
-        self.log_var_array = mu_and_log_var_arrays[self.latent_space_dim:] # the second half are the log_var
-        self.z_values = self._sampling()        
-        output = self.decoder.forward_pass(self.z_values)
-        return output
-    
-    def _loss_function(self, input_data: NDArray, output: NDArray, lam: float = 1):
-        reconstruction_error = sqrt(np.sum((input_data - output)**2))
-        kl_divergence = -0.5 * np.sum(1 + self.log_var_array - self.mu_array**2 - np.exp(self.log_var_array))
-        total_loss = reconstruction_error + lam * kl_divergence
-        return (reconstruction_error, kl_divergence, total_loss)
+        z = mu + std * eps
+        return self.decoder.forward_pass(z)
 
-    
+    def try_testing_set(self, test_data: NDArray[np.float64]) -> List[NDArray[np.float64]]:
+        return [self.try_current_epoch(row) for row in test_data]
+
     def get_current_latent_space(self, input: NDArray[np.float64]) -> NDArray[np.float64]:
-        """
-        Returns the latent representation (vector in the bottleneck layer)
-        after doing a forward pass with the given values
-        """
-        self._forward_pass(input)
+        mu_logvar = self.encoder.forward_pass(input)
+        mu = mu_logvar[:self.latent_dim]
+        logvar = mu_logvar[self.latent_dim:]
+        std = np.exp(0.5 * logvar)
+        eps = np.random.normal(size=std.shape)
+        return mu + std * eps
 
-        return self.z_values
-
-    def decode_from_latent_space_representation(self, latent_space_representation: NDArray[np.float64]) -> NDArray[np.float64]:
-        """
-        Returns the output decoded from the latent_space_representation given
-        """
-        return self.decoder.forward_pass(latent_space_representation)
-
-    def try_current_epoch(self, inputs: NDArray[np.float64]) -> NDArray[np.float64]:
-        """
-        inputs: single vector
-        returns: prediction for this vector
-        """
-        return self._forward_pass(inputs)
-
-    def try_testing_set(self, testing_set: NDArray[np.float64]) -> List[NDArray[np.float64]]:
-        """
-        testing_set: matrix NxM
-        returns: list with all the predictions of each row
-        """
-        predictions = []
-        for i in range(testing_set.shape[0]):
-            row = testing_set[i]
-            prediction = self.try_current_epoch(row)
-            predictions.append(prediction)
-        return predictions
+    def decode_from_latent_space_representation(self, z: NDArray[np.float64]) -> NDArray[np.float64]:
+        return self.decoder.forward_pass(z)
